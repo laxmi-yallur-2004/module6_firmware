@@ -1,0 +1,58 @@
+#include <LiquidCrystal.h>
+
+// LCD
+LiquidCrystal lcd(8, 9, 4, 5, 6, 7);
+
+// External interrupt pin
+const byte INTERRUPT_PIN = 2;
+
+// LED
+const byte LED_PIN = 13;
+
+// Shared variable between ISR and main program
+volatile bool interruptFlag = false;
+
+// Interrupt Service Routine
+void interruptHandler()
+{
+  // Keep ISR very short
+  interruptFlag = true;
+}
+
+void setup()
+{
+  pinMode(INTERRUPT_PIN, INPUT_PULLUP);
+  pinMode(LED_PIN, OUTPUT);
+
+  lcd.begin(16, 2);
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("MODULE 6");
+  lcd.setCursor(0, 1);
+  lcd.print("INTERRUPT READY");
+
+  // D2 -> external interrupt 0
+  attachInterrupt(
+    digitalPinToInterrupt(INTERRUPT_PIN),
+    interruptHandler,
+    FALLING
+  );
+}
+
+void loop()
+{
+  if (interruptFlag)
+  {
+    // Clear flag
+    interruptFlag = false;
+
+    digitalWrite(LED_PIN, !digitalRead(LED_PIN));
+
+    lcd.clear();
+    lcd.setCursor(0, 0);
+    lcd.print("INTERRUPT!");
+    lcd.setCursor(0, 1);
+    lcd.print("ISR EVENT");
+  }
+}
