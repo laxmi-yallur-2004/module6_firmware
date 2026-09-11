@@ -1,0 +1,91 @@
+#include <LiquidCrystal.h>
+
+// ==================================================
+// LCD
+// RS, EN, D4, D5, D6, D7
+// ==================================================
+LiquidCrystal lcd(8, 9, 4, 5, 6, 7);
+
+// ==================================================
+// INTERRUPT PIN
+// Arduino Uno D2 = External Interrupt 0
+// ==================================================
+const byte INTERRUPT_PIN = 2;
+
+// ==================================================
+// SHARED VARIABLES
+// ==================================================
+volatile bool interruptEvent = false;
+volatile unsigned long interruptCount = 0;
+
+// ==================================================
+// DEBOUNCE
+// ==================================================
+unsigned long lastPressTime = 0;
+const unsigned long DEBOUNCE_TIME = 200;
+
+// ==================================================
+// INTERRUPT SERVICE ROUTINE
+// ==================================================
+void interruptHandler()
+{
+  // Keep ISR very short
+  interruptEvent = true;
+}
+
+// ==================================================
+// SETUP
+// ==================================================
+void setup()
+{
+  pinMode(INTERRUPT_PIN, INPUT_PULLUP);
+
+  lcd.begin(16, 2);
+
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("ISR COUNTER");
+
+  lcd.setCursor(0, 1);
+  lcd.print("Count: 0");
+
+  attachInterrupt(
+    digitalPinToInterrupt(INTERRUPT_PIN),
+    interruptHandler,
+    FALLING
+  );
+}
+
+// ==================================================
+// MAIN LOOP
+// ==================================================
+void loop()
+{
+  if (interruptEvent)
+  {
+    unsigned long currentTime = millis();
+
+    // Clear the event safely
+    noInterrupts();
+    interruptEvent = false;
+    interrupts();
+
+    // Button debounce
+    if (currentTime - lastPressTime >= DEBOUNCE_TIME)
+    {
+      lastPressTime = currentTime;
+
+      // Safely update shared counter
+      noInterrupts();
+      interruptCount++;
+      unsigned long count = interruptCount;
+      interrupts();
+
+      // Display count
+      lcd.setCursor(0, 1);
+      lcd.print("Count: ");
+      lcd.print(count);
+      lcd.print("       ");
+    }
+  }
+}
