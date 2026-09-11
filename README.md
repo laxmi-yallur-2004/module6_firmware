@@ -1,110 +1,196 @@
-# Module 6 - Interrupts
+# MODULE 6 – INTERRUPTS
 
 ## Objective
 
-This module demonstrates basic interrupt handling on Arduino Uno.
+Learn how to use **external interrupts** with Arduino Uno.
 
-The tasks cover:
-
-- External interrupts
-- Interrupt Service Routine (ISR)
-- volatile variables
-- ISR and main program interaction
-- Interrupt counting
-- Critical section
+In this module, we use a button connected to **D2** to generate an interrupt.
 
 ---
 
-# Task 1 - External Interrupt + ISR
+## Hardware
 
-## Objective
+* Arduino Uno
+* 16x2 LCD
+* Push button
+* USB cable
 
-To detect a button press using an external interrupt.
+### LCD Connections
 
-## Working
+| LCD | Arduino |
+| --- | ------- |
+| RS  | D8      |
+| EN  | D9      |
+| D4  | D4      |
+| D5  | D5      |
+| D6  | D6      |
+| D7  | D7      |
 
-The push button is connected to Arduino pin D2.
+### Button Connection
+
+```text
+Button → D2
+Button → GND
+```
+
+D2 is used because Arduino Uno supports an external interrupt on **D2**.
+
+---
+
+# Task 1 – External Interrupt
+
+## What we do
+
+When the button is pressed, an interrupt occurs.
+
+The ISR (Interrupt Service Routine) sets an event flag.
+
+```text
+Button Press
+     ↓
+External Interrupt
+     ↓
+ISR
+     ↓
+interruptFlag = true
+     ↓
+Main Loop
+     ↓
+LCD displays interrupt event
+```
+
+## Main concepts
+
+* `attachInterrupt()` – enables the external interrupt.
+* `ISR` – small function that runs when the interrupt occurs.
+* `volatile` – tells the compiler that a variable can change inside an interrupt.
+* `FALLING` – interrupt occurs when the signal changes from HIGH to LOW.
+
+## Expected Result
 
 When the button is pressed:
 
-1. An external interrupt is generated.
-2. The ISR executes.
-3. The ISR sets an interrupt flag.
-4. The main loop detects the flag.
-5. The LCD displays the interrupt event.
-
-## Connection
-
-- LCD RS → D8
-- LCD EN → D9
-- LCD D4 → D4
-- LCD D5 → D5
-- LCD D6 → D6
-- LCD D7 → D7
-- Push button → D2
-- Push button other side → GND
-
-## Output
-
-Initial output:
-
-MODULE 6
-INTERRUPT READY
-
-After pressing the button:
-
+```text
 INTERRUPT!
 ISR EVENT
+```
 
-## Result
-
-The external interrupt and ISR were successfully tested.
+The LED can also indicate that the interrupt occurred.
 
 ---
 
-# Task 2 - Interrupt Counter
+# Task 2 – Interrupt Counter
 
-## Objective
+## What we do
 
-To count interrupt events using an ISR.
+In Task 2, we count button interrupt events.
 
-## Working
+The ISR sets an event flag:
 
-Every time an interrupt occurs, the ISR increments the interrupt counter.
+```text
+Button Press
+     ↓
+Interrupt
+     ↓
+ISR
+     ↓
+interruptEvent = true
+     ↓
+Main Loop
+     ↓
+Debounce
+     ↓
+interruptCount++
+     ↓
+LCD displays count
+```
 
-The main program safely reads the counter and displays it on the LCD.
+## Debouncing
 
-## Output
+A real button can produce multiple electrical changes during one press.
 
-Initial:
+This is called **button bouncing**.
 
-ISR COUNTER
-Count: 0
+We use a debounce time of **200 ms** to avoid counting one press multiple times.
 
-After interrupt:
+No `delay()` is used.
 
-ISR COUNTER
+---
+
+## Critical Section
+
+The interrupt counter is protected using:
+
+```cpp
+noInterrupts();
+interruptCount++;
+interrupts();
+```
+
+This prevents an interrupt from changing the shared variable while it is being accessed.
+
+---
+
+## Expected Output
+
+When the button is pressed:
+
+```text
+INTERRUPT!
 Count: 1
+```
 
-Further interrupts:
+Next press:
 
-ISR COUNTER
+```text
+INTERRUPT!
 Count: 2
+```
 
-ISR COUNTER
+Next press:
+
+```text
+INTERRUPT!
 Count: 3
+```
 
-## Important Note
+The count increases for every valid button press.
 
-A mechanical push button can produce multiple electrical transitions during one press. This is called switch bouncing.
+---
 
-Therefore, one physical button press can sometimes increase the counter by more than one.
+## Important Concepts Learned
 
-## Concepts Demonstrated
+### Interrupt
 
-- External interrupt
-- ISR
-- volatile variable
-- Shared data
-- Critical section
-- Interrupt counting
+An interrupt allows the Arduino to immediately respond to an event without continuously checking the button.
+
+### ISR
+
+**ISR = Interrupt Service Routine**
+
+It is the function that runs when an interrupt occurs.
+
+### volatile
+
+`volatile` is used for variables shared between the ISR and the main program.
+
+### Non-blocking
+
+The program does not use `delay()` for button handling. The main loop continues running normally.
+
+---
+
+## Conclusion
+
+Module 6 demonstrates:
+
+* External interrupts
+* ISR
+* `volatile` variables
+* Button debounce
+* Interrupt event handling
+* Interrupt counter
+* Critical sections
+* Non-blocking programming
+
+The Arduino Uno detects the button press using the **D2 external interrupt** and processes the event in the main program.
