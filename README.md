@@ -1,196 +1,169 @@
-# MODULE 6 – INTERRUPTS
+# Module 6 Firmware
 
-## Objective
+## Overview
 
-Learn how to use **external interrupts** with Arduino Uno.
+Module 6 contains two tasks based on safe continuous data handling using circular buffers.
 
-In this module, we use a button connected to **D2** to generate an interrupt.
+* **Task 1:** ADC/DMA Circular Buffer Concept
+* **Task 2:** UART RX Circular Buffer
+
+The implementation is combined into a **single `module6_firmware.ino` file**.
+
+The code uses:
+
+* Circular buffers
+* Half-buffer and full-buffer processing
+* UART receive buffering
+* UART overflow detection
+* Non-blocking `millis()` timing
+* No `delay()`
+* No dynamic memory
+
+> **Hardware note:** The Arduino Uno ATmega328P does not contain a hardware DMA controller. Therefore, Task 1 demonstrates the DMA circular-buffer concept using a software DMA producer.
 
 ---
 
-## Hardware
+# Task 1 — ADC/DMA Circular Buffer
 
-* Arduino Uno
-* 16x2 LCD
-* Push button
-* USB cable
+## What We Did
 
-### LCD Connections
+A circular buffer of **8 samples** was created.
 
-| LCD | Arduino |
-| --- | ------- |
-| RS  | D8      |
-| EN  | D9      |
-| D4  | D4      |
-| D5  | D5      |
-| D6  | D6      |
-| D7  | D7      |
-
-### Button Connection
+The buffer is filled continuously with sample values:
 
 ```text
-Button → D2
-Button → GND
+0 10 20 30 40 50 60 70
 ```
 
-D2 is used because Arduino Uno supports an external interrupt on **D2**.
+The buffer is divided into two halves:
+
+```text
+First Half              Second Half
+0  10  20  30          40  50  60  70
+```
+
+When the first half is filled, it is processed.
+
+When the complete buffer is filled, the second half is processed.
+
+After that, the buffer starts again from the beginning.
+
+This demonstrates the basic **circular-buffer and half/full-buffer processing pipeline**.
+
+## Output Obtained
+
+```text
+Processing: 0 10 20 30
+Processing: 40 50 60 70
+
+Processing: 0 10 20 30
+Processing: 40 50 60 70
+
+Processing: 0 10 20 30
+Processing: 40 50 60 70
+
+Processing: 0 10 20 30
+Processing: 40 50 60 70
+```
+
+## Result
+
+```text
+Task 1: Circular buffer processing working successfully.
+```
 
 ---
 
-# Task 1 – External Interrupt
+# Task 2 — UART RX Circular Buffer
 
-## What we do
+## What We Did
 
-When the button is pressed, an interrupt occurs.
+A **16-byte UART RX circular buffer** was implemented.
 
-The ISR (Interrupt Service Routine) sets an event flag.
+Incoming UART data is first stored in the buffer instead of being processed immediately.
+
+The flow is:
 
 ```text
-Button Press
-     ↓
-External Interrupt
-     ↓
-ISR
-     ↓
-interruptFlag = true
-     ↓
+UART RX
+   ↓
+RX Circular Buffer
+   ↓
 Main Loop
-     ↓
-LCD displays interrupt event
+   ↓
+Process Received Data
 ```
 
-## Main concepts
+The buffer uses:
 
-* `attachInterrupt()` – enables the external interrupt.
-* `ISR` – small function that runs when the interrupt occurs.
-* `volatile` – tells the compiler that a variable can change inside an interrupt.
-* `FALLING` – interrupt occurs when the signal changes from HIGH to LOW.
+* `head` — position where new data is stored
+* `tail` — position from where data is processed
+* Overflow counter — detects when the buffer becomes full
 
-## Expected Result
+Newline (`\n`) and carriage return (`\r`) characters are ignored while displaying received data.
 
-When the button is pressed:
+## Output Obtained
+
+During the test, the UART buffer reported:
 
 ```text
-INTERRUPT!
-ISR EVENT
+UART Overflows: 0
 ```
 
-The LED can also indicate that the interrupt occurred.
+This means no UART circular-buffer overflow occurred during the observed test.
+
+When characters are received, the output format is:
+
+```text
+RX: H
+RX: E
+RX: L
+RX: L
+RX: O
+```
+
+## Result
+
+```text
+Task 2: UART RX circular buffer working successfully.
+UART Overflows: 0
+```
 
 ---
 
-# Task 2 – Interrupt Counter
-
-## What we do
-
-In Task 2, we count button interrupt events.
-
-The ISR sets an event flag:
+# Final Module 6 Output
 
 ```text
-Button Press
-     ↓
-Interrupt
-     ↓
-ISR
-     ↓
-interruptEvent = true
-     ↓
-Main Loop
-     ↓
-Debounce
-     ↓
-interruptCount++
-     ↓
-LCD displays count
+============================
+MODULE 6 FIRMWARE
+============================
+
+TASK 1: ADC/DMA CIRCULAR BUFFER
+TASK 2: UART RX CIRCULAR BUFFER
+
+Sampling started...
+Type characters to test UART RX
+
+Processing: 0 10 20 30
+Processing: 40 50 60 70
+UART Overflows: 0
+
+Processing: 0 10 20 30
+Processing: 40 50 60 70
+UART Overflows: 0
+
+Processing: 0 10 20 30
+Processing: 40 50 60 70
+UART Overflows: 0
 ```
 
-## Debouncing
-
-A real button can produce multiple electrical changes during one press.
-
-This is called **button bouncing**.
-
-We use a debounce time of **200 ms** to avoid counting one press multiple times.
-
-No `delay()` is used.
-
----
-
-## Critical Section
-
-The interrupt counter is protected using:
-
-```cpp
-noInterrupts();
-interruptCount++;
-interrupts();
-```
-
-This prevents an interrupt from changing the shared variable while it is being accessed.
-
----
-
-## Expected Output
-
-When the button is pressed:
+## Final Result
 
 ```text
-INTERRUPT!
-Count: 1
+TASK 1: PASS
+Circular buffer half/full processing demonstrated.
+
+TASK 2: PASS
+UART RX circular buffer active.
+UART Overflows: 0
 ```
-
-Next press:
-
-```text
-INTERRUPT!
-Count: 2
-```
-
-Next press:
-
-```text
-INTERRUPT!
-Count: 3
-```
-
-The count increases for every valid button press.
-
----
-
-## Important Concepts Learned
-
-### Interrupt
-
-An interrupt allows the Arduino to immediately respond to an event without continuously checking the button.
-
-### ISR
-
-**ISR = Interrupt Service Routine**
-
-It is the function that runs when an interrupt occurs.
-
-### volatile
-
-`volatile` is used for variables shared between the ISR and the main program.
-
-### Non-blocking
-
-The program does not use `delay()` for button handling. The main loop continues running normally.
-
----
-
-## Conclusion
-
-Module 6 demonstrates:
-
-* External interrupts
-* ISR
-* `volatile` variables
-* Button debounce
-* Interrupt event handling
-* Interrupt counter
-* Critical sections
-* Non-blocking programming
-
-The Arduino Uno detects the button press using the **D2 external interrupt** and processes the event in the main program.
