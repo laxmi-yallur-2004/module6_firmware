@@ -8,7 +8,7 @@
 /* ================= UART ================= */
 
 #define UART_BUFFER_SIZE 64
-#define MESSAGE_SIZE 32
+#define MESSAGE_SIZE 64
 
 volatile uint8_t uartBuffer[UART_BUFFER_SIZE];
 volatile uint8_t uartHead = 0;
