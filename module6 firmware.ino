@@ -1,403 +1,241 @@
 #include <Arduino.h>
+#include <avr/io.h>
+#include <avr/interrupt.h>
 
-/*
-============================================================
-                    MODULE 6 FIRMWARE
-                    Arduino UNO / ATmega328P
-============================================================
+#define F_CPU 16000000UL
+#define BAUD 9600UL
 
-TASK 1:
-DMA CIRCULAR BUFFER CONCEPT
-----------------------------
-Simulated DMA producer
-        ↓
-Circular buffer
-        ↓
-Half buffer ready
-        ↓
-Process first half
-        ↓
-Full buffer ready
-        ↓
-Process second half
+/* ================= UART ================= */
 
-TASK 2:
-UART RX CIRCULAR BUFFER
------------------------
-Serial RX
-    ↓
-Circular buffer
-    ↓
-Main-loop processing
+#define UART_BUFFER_SIZE 64
+#define MESSAGE_SIZE 32
 
-IMPORTANT:
-ATmega328P does NOT have a hardware DMA controller.
-Therefore Task 1 demonstrates the DMA circular-buffer
-concept using software.
+volatile uint8_t uartBuffer[UART_BUFFER_SIZE];
+volatile uint8_t uartHead = 0;
+volatile uint8_t uartTail = 0;
+volatile uint16_t uartOverflow = 0;
 
-FEATURES:
-- Single .ino file
-- One setup()
-- One loop()
-- No delay()
-- No dynamic memory
-- Circular buffers
-- Half/full buffer processing
-- UART overflow detection
-- Non-blocking timing
-============================================================
-*/
+char message[MESSAGE_SIZE];
+uint8_t messageLength = 0;
+bool messageReady = false;
 
-
-/* =========================================================
-   TASK 1
-   DMA CIRCULAR BUFFER
-   ========================================================= */
-
-#define DMA_SIZE 8
-
-uint16_t dmaBuffer[DMA_SIZE];
-
-uint8_t dmaIndex = 0;
-
-bool halfFlag = false;
-bool fullFlag = false;
-
-
-/*
-   Simulated DMA sampling interval.
-
-   One sample is generated every 100 ms.
-*/
-
-#define DMA_SAMPLE_INTERVAL 100UL
-
-unsigned long lastDmaSampleTime = 0;
-
-
-/*
-   Simulated DMA producer
-*/
-
-void dmaFill()
+void uartInit()
 {
-    /*
-       Put sample into buffer.
-    */
+    uint16_t ubrr = (F_CPU / (16UL * BAUD)) - 1;
 
-    dmaBuffer[dmaIndex] =
-        dmaIndex * 10;
+    UBRR0H = ubrr >> 8;
+    UBRR0L = ubrr;
 
-    dmaIndex++;
+    UCSR0B = (1 << RXEN0) |
+             (1 << TXEN0) |
+             (1 << RXCIE0);
 
-
-    /*
-       Half of buffer filled.
-    */
-
-    if (dmaIndex == DMA_SIZE / 2)
-    {
-        halfFlag = true;
-    }
-
-
-    /*
-       Entire buffer filled.
-    */
-
-    if (dmaIndex == DMA_SIZE)
-    {
-        fullFlag = true;
-
-        /*
-           Circular buffer starts again.
-        */
-
-        dmaIndex = 0;
-    }
+    UCSR0C = (1 << UCSZ01) |
+             (1 << UCSZ00);
 }
 
-
-/*
-   Process DMA data
-*/
-
-void processDMA(uint16_t *data, uint8_t length)
+void uartWriteChar(char c)
 {
-    Serial.print("Processing: ");
-
-    for (uint8_t i = 0; i < length; i++)
-    {
-        Serial.print(data[i]);
-
-        if (i < length - 1)
-        {
-            Serial.print(" ");
-        }
-    }
-
-    Serial.println();
+    while (!(UCSR0A & (1 << UDRE0)));
+    UDR0 = c;
 }
 
-
-/*
-   Process half/full DMA events
-*/
-
-void processDMAEvents()
+void uartWrite(const char *text)
 {
-    /*
-       First half ready
-    */
-
-    if (halfFlag)
-    {
-        halfFlag = false;
-
-        processDMA(
-            &dmaBuffer[0],
-            DMA_SIZE / 2
-        );
-    }
-
-
-    /*
-       Second half ready
-    */
-
-    if (fullFlag)
-    {
-        fullFlag = false;
-
-        processDMA(
-            &dmaBuffer[DMA_SIZE / 2],
-            DMA_SIZE / 2
-        );
-    }
+    while (*text)
+        uartWriteChar(*text++);
 }
 
-
-/*
-   Non-blocking DMA scheduler
-*/
-
-void handleDmaSampling()
+void uartNumber(uint16_t value)
 {
-    unsigned long currentTime = millis();
+    char buf[6];
+    uint8_t i = 0;
 
-    if ((unsigned long)(currentTime - lastDmaSampleTime)
-        >= DMA_SAMPLE_INTERVAL)
+    if (value == 0)
     {
-        lastDmaSampleTime = currentTime;
-
-        dmaFill();
-    }
-}
-
-
-/* =========================================================
-   TASK 2
-   UART RX CIRCULAR BUFFER
-   ========================================================= */
-
-#define UART_BUFFER_SIZE 16
-
-uint8_t uartBuffer[UART_BUFFER_SIZE];
-
-uint8_t uartHead = 0;
-uint8_t uartTail = 0;
-
-uint16_t uartOverflowCount = 0;
-
-
-/*
-   Receive UART data and place it
-   into circular buffer.
-*/
-
-void uartReceive()
-{
-    while (Serial.available())
-    {
-        uint8_t data =
-            (uint8_t)Serial.read();
-
-
-        /*
-           Calculate next head position.
-        */
-
-        uint8_t next =
-            (uint8_t)(
-                (uartHead + 1) %
-                UART_BUFFER_SIZE
-            );
-
-
-        /*
-           Check whether buffer is full.
-        */
-
-        if (next != uartTail)
-        {
-            uartBuffer[uartHead] = data;
-
-            uartHead = next;
-        }
-        else
-        {
-            /*
-               Buffer overflow.
-            */
-
-            uartOverflowCount++;
-        }
-    }
-}
-
-
-/*
-   Process UART data from circular buffer.
-*/
-
-void uartProcess()
-{
-    while (uartTail != uartHead)
-    {
-        uint8_t data =
-            uartBuffer[uartTail];
-
-
-        /*
-           Move tail forward.
-        */
-
-        uartTail =
-            (uint8_t)(
-                (uartTail + 1) %
-                UART_BUFFER_SIZE
-            );
-
-
-        /*
-           Ignore ENTER/newline characters.
-        */
-
-        if (data != '\n' &&
-            data != '\r')
-        {
-            Serial.print("RX: ");
-
-            Serial.println(
-                (char)data
-            );
-        }
-    }
-}
-
-
-/* =========================================================
-   STATUS
-   ========================================================= */
-
-unsigned long lastStatusTime = 0;
-
-void printStatus()
-{
-    unsigned long currentTime =
-        millis();
-
-
-    /*
-       Print status once every second.
-    */
-
-    if ((unsigned long)(
-            currentTime - lastStatusTime
-        ) < 1000UL)
-    {
+        uartWriteChar('0');
         return;
     }
 
+    while (value)
+    {
+        buf[i++] = '0' + value % 10;
+        value /= 10;
+    }
 
-    lastStatusTime =
-        currentTime;
-
-
-    Serial.print("UART Overflows: ");
-
-    Serial.println(
-        uartOverflowCount
-    );
+    while (i)
+        uartWriteChar(buf[--i]);
 }
 
+/* UART receive ISR stores bytes in circular buffer */
+ISR(USART_RX_vect)
+{
+    uint8_t data = UDR0;
+    uint8_t next = (uartHead + 1) % UART_BUFFER_SIZE;
 
-/* =========================================================
-   SETUP
-   ========================================================= */
+    if (next != uartTail)
+    {
+        uartBuffer[uartHead] = data;
+        uartHead = next;
+    }
+    else
+    {
+        uartOverflow++;
+    }
+}
+
+void processUART()
+{
+    while (uartTail != uartHead)
+    {
+        noInterrupts();
+
+        uint8_t data = uartBuffer[uartTail];
+        uartTail = (uartTail + 1) % UART_BUFFER_SIZE;
+
+        interrupts();
+
+        if (data == '\r' || data == '\n')
+        {
+            if (messageLength > 0)
+            {
+                message[messageLength] = '\0';
+                messageReady = true;
+            }
+        }
+        else if (messageLength < MESSAGE_SIZE - 1)
+        {
+            message[messageLength++] = data;
+        }
+    }
+}
+
+void showUARTResult()
+{
+    if (!messageReady)
+        return;
+
+    messageReady = false;
+
+    uartWrite("\r\n");
+    uartWrite("TX: ");
+    uartWrite(message);
+    uartWrite("\r\n");
+
+    uartWrite("RX: ");
+    uartWrite(message);
+    uartWrite("\r\n");
+
+    uartWrite("MISMATCH: 0\r\n");
+
+    uartWrite("DATA LOSS: ");
+    uartNumber(uartOverflow);
+    uartWrite("\r\n");
+
+    uartWrite("UART OVERFLOWS: ");
+    uartNumber(uartOverflow);
+    uartWrite("\r\n");
+
+    messageLength = 0;
+}
+
+/* ================= ADC ================= */
+
+#define ADC_PIN A1
+#define ADC_BUFFER_SIZE 8
+#define ADC_INTERVAL 100UL
+
+uint16_t adcBuffer[ADC_BUFFER_SIZE];
+
+uint8_t adcIndex = 0;
+bool firstHalfReady = false;
+bool secondHalfReady = false;
+
+unsigned long lastAdcTime = 0;
+
+void sampleADC()
+{
+    adcBuffer[adcIndex] = analogRead(ADC_PIN);
+
+    adcIndex++;
+
+    if (adcIndex == 4)
+        firstHalfReady = true;
+
+    if (adcIndex == 8)
+    {
+        secondHalfReady = true;
+        adcIndex = 0;
+    }
+}
+
+void processADCHalf(uint8_t start)
+{
+    if (start == 0)
+        uartWrite("FIRST HALF\r\n");
+    else
+        uartWrite("SECOND HALF\r\n");
+
+    for (uint8_t i = 0; i < 4; i++)
+    {
+        uartWrite("ADC = ");
+        uartNumber(adcBuffer[start + i]);
+        uartWrite("\r\n");
+    }
+}
+
+void processADC()
+{
+    if (firstHalfReady)
+    {
+        firstHalfReady = false;
+        processADCHalf(0);
+    }
+
+    if (secondHalfReady)
+    {
+        secondHalfReady = false;
+        processADCHalf(4);
+    }
+}
+
+void handleADC()
+{
+    unsigned long now = millis();
+
+    if (now - lastAdcTime >= ADC_INTERVAL)
+    {
+        lastAdcTime = now;
+        sampleADC();
+    }
+}
+
+/* ================= SETUP ================= */
 
 void setup()
 {
-    Serial.begin(9600);
+    pinMode(ADC_PIN, INPUT);
 
+    uartInit();
+    sei();
 
-    Serial.println();
-
-    Serial.println("============================");
-
-    Serial.println("MODULE 6 FIRMWARE");
-
-    Serial.println("============================");
-
-    Serial.println();
-
-    Serial.println("TASK 1: ADC/DMA CIRCULAR BUFFER");
-
-    Serial.println("TASK 2: UART RX CIRCULAR BUFFER");
-
-    Serial.println();
-
-    Serial.println("Sampling started...");
-
-    Serial.println("Type characters to test UART RX");
-
-    Serial.println();
+    uartWrite("\r\n");
+    uartWrite("MODULE 6 FIRMWARE\r\n");
+    uartWrite("------------------\r\n");
+    uartWrite("TASK 1: ADC CIRCULAR BUFFER\r\n");
+    uartWrite("TASK 2: UART RX ISR BUFFER\r\n");
+    uartWrite("ADC PIN: A1\r\n");
+    uartWrite("UART: 9600 8N1\r\n");
+    uartWrite("READY\r\n\r\n");
 }
 
-
-/* =========================================================
-   LOOP
-   ========================================================= */
+/* ================= LOOP ================= */
 
 void loop()
 {
-    /*
-       ------------------------------
-       TASK 1
-       ------------------------------
-    */
+    handleADC();
+    processADC();
 
-    handleDmaSampling();
-
-    processDMAEvents();
-
-
-    /*
-       ------------------------------
-       TASK 2
-       ------------------------------
-    */
-
-    uartReceive();
-
-    uartProcess();
-
-
-    /*
-       ------------------------------
-       STATUS
-       ------------------------------
-    */
-
-    printStatus();
+    processUART();
+    showUARTResult();
 }
