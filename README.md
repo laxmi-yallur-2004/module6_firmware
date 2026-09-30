@@ -1,169 +1,161 @@
 # Module 6 Firmware
 
-## Overview
+## Hardware
 
-Module 6 contains two tasks based on safe continuous data handling using circular buffers.
+* Arduino Uno / ATmega328P
+* Potentiometer
+* USB cable
+* Potentiometer middle pin → A1
+* Potentiometer outer pins → 5V and GND
 
-* **Task 1:** ADC/DMA Circular Buffer Concept
-* **Task 2:** UART RX Circular Buffer
+## Task 1 — ADC Sampling Using Circular Buffer
 
-The implementation is combined into a **single `module6_firmware.ino` file**.
+### What we did
 
-The code uses:
-
-* Circular buffers
-* Half-buffer and full-buffer processing
-* UART receive buffering
-* UART overflow detection
-* Non-blocking `millis()` timing
-* No `delay()`
-* No dynamic memory
-
-> **Hardware note:** The Arduino Uno ATmega328P does not contain a hardware DMA controller. Therefore, Task 1 demonstrates the DMA circular-buffer concept using a software DMA producer.
-
----
-
-# Task 1 — ADC/DMA Circular Buffer
-
-## What We Did
-
-A circular buffer of **8 samples** was created.
-
-The buffer is filled continuously with sample values:
-
-```text
-0 10 20 30 40 50 60 70
-```
+We read the analog voltage from **A1** and store the ADC values in an **8-sample circular buffer**.
 
 The buffer is divided into two halves:
 
-```text
-First Half              Second Half
-0  10  20  30          40  50  60  70
-```
+* Samples 1–4 → First Half
+* Samples 5–8 → Second Half
 
-When the first half is filled, it is processed.
+After 8 samples, the buffer starts again from position 1.
 
-When the complete buffer is filled, the second half is processed.
-
-After that, the buffer starts again from the beginning.
-
-This demonstrates the basic **circular-buffer and half/full-buffer processing pipeline**.
-
-## Output Obtained
+### Working
 
 ```text
-Processing: 0 10 20 30
-Processing: 40 50 60 70
-
-Processing: 0 10 20 30
-Processing: 40 50 60 70
-
-Processing: 0 10 20 30
-Processing: 40 50 60 70
-
-Processing: 0 10 20 30
-Processing: 40 50 60 70
+Potentiometer
+     ↓
+    A1
+     ↓
+analogRead()
+     ↓
+8-sample circular buffer
+     ↓
+First 4 samples → Process
+Next 4 samples  → Process
+     ↓
+Repeat
 ```
 
-## Result
+### Why we used it
+
+A circular buffer allows continuous sampling without creating a new buffer every time.
+
+The same memory is reused again and again.
+
+### Output
 
 ```text
-Task 1: Circular buffer processing working successfully.
+FIRST HALF
+ADC = 683
+ADC = 682
+ADC = 682
+ADC = 683
+
+SECOND HALF
+ADC = 682
+ADC = 683
+ADC = 682
+ADC = 683
+
+FIRST HALF
+ADC = 682
+ADC = 683
+...
 ```
+
+The ADC values change when the potentiometer position changes.
+
+**Note:** ATmega328P does not have hardware DMA. Therefore, this module demonstrates the **DMA circular-buffer concept using software**.
 
 ---
 
-# Task 2 — UART RX Circular Buffer
+## Task 2 — UART RX Using ISR and Safe Circular Buffer
 
-## What We Did
+### What we did
 
-A **16-byte UART RX circular buffer** was implemented.
+We receive characters from the PC using the **UART receive interrupt (ISR)**.
 
-Incoming UART data is first stored in the buffer instead of being processed immediately.
+Every received character is placed into a **64-byte circular buffer**.
 
-The flow is:
+The main loop removes the data from the buffer and forms the complete message.
+
+### Working
 
 ```text
+PC
+ ↓
 UART RX
-   ↓
-RX Circular Buffer
-   ↓
-Main Loop
-   ↓
-Process Received Data
+ ↓
+RX Interrupt
+ ↓
+64-byte circular buffer
+ ↓
+Main loop
+ ↓
+Complete message
+ ↓
+TX / RX / MISMATCH / DATA LOSS
 ```
 
-The buffer uses:
+### Why we used it
 
-* `head` — position where new data is stored
-* `tail` — position from where data is processed
-* Overflow counter — detects when the buffer becomes full
+The ISR receives data quickly and stores it safely while the main program continues running.
 
-Newline (`\n`) and carriage return (`\r`) characters are ignored while displaying received data.
+The circular buffer prevents the main program from needing to process every character immediately.
 
-## Output Obtained
+Overflow is counted if the buffer becomes full.
 
-During the test, the UART buffer reported:
+### UART Configuration
 
 ```text
-UART Overflows: 0
+Baud Rate : 9600
+Data      : 8 bits
+Parity    : None
+Stop      : 1
 ```
 
-This means no UART circular-buffer overflow occurred during the observed test.
+### Test
 
-When characters are received, the output format is:
+Send:
 
 ```text
-RX: H
-RX: E
-RX: L
-RX: L
-RX: O
+HELLO
 ```
 
-## Result
+and press Enter.
+
+### Output
 
 ```text
-Task 2: UART RX circular buffer working successfully.
-UART Overflows: 0
+TX: HELLO
+RX: HELLO
+MISMATCH: 0
+DATA LOSS: 0
+UART OVERFLOWS: 0
 ```
 
----
+This shows that the message was received correctly and no UART buffer overflow occurred during the test.
 
-# Final Module 6 Output
+## Main Concepts Learned
 
-```text
-============================
-MODULE 6 FIRMWARE
-============================
+* ADC sampling
+* Circular buffers
+* Half-buffer processing
+* Continuous buffer reuse
+* UART receive interrupt
+* Safe ISR buffering
+* Overflow detection
+* Non-blocking timing using `millis()`
+* No `delay()`
+* No dynamic memory
 
-TASK 1: ADC/DMA CIRCULAR BUFFER
-TASK 2: UART RX CIRCULAR BUFFER
+## Limitations
 
-Sampling started...
-Type characters to test UART RX
+The Arduino Uno ATmega328P has no hardware DMA controller, so Task 1 is a **software implementation of the DMA circular-buffer concept**.
 
-Processing: 0 10 20 30
-Processing: 40 50 60 70
-UART Overflows: 0
+Task 2 uses the UART RX interrupt directly instead of Arduino `Serial`, avoiding conflicts with the Arduino HardwareSerial RX interrupt.
 
-Processing: 0 10 20 30
-Processing: 40 50 60 70
-UART Overflows: 0
-
-Processing: 0 10 20 30
-Processing: 40 50 60 70
-UART Overflows: 0
 ```
-
-## Final Result
-
-```text
-TASK 1: PASS
-Circular buffer half/full processing demonstrated.
-
-TASK 2: PASS
-UART RX circular buffer active.
-UART Overflows: 0
 ```
