@@ -5,157 +5,138 @@
 * Arduino Uno / ATmega328P
 * Potentiometer
 * USB cable
-* Potentiometer middle pin → A1
-* Potentiometer outer pins → 5V and GND
 
-## Task 1 — ADC Sampling Using Circular Buffer
+## Connections
 
-### What we did
+| Connection          | Arduino |
+| ------------------- | ------- |
+| Potentiometer VCC   | 5V      |
+| Potentiometer Wiper | A1      |
+| Potentiometer GND   | GND     |
 
-We read the analog voltage from **A1** and store the ADC values in an **8-sample circular buffer**.
+UART is through the Arduino USB connection.
 
-The buffer is divided into two halves:
+## Task 1: ADC Circular Buffer
 
-* Samples 1–4 → First Half
-* Samples 5–8 → Second Half
+The Arduino reads the analog voltage from **A1** every 100 ms.
 
-After 8 samples, the buffer starts again from position 1.
-
-### Working
+The ADC values are stored in an **8-sample circular buffer**.
 
 ```text
 Potentiometer
-     ↓
-    A1
-     ↓
-analogRead()
-     ↓
-8-sample circular buffer
-     ↓
+      ↓
+     A1
+      ↓
+   ADC Read
+      ↓
+8-sample buffer
+      ↓
 First 4 samples → Process
-Next 4 samples  → Process
-     ↓
-Repeat
+Last 4 samples  → Process
+      ↓
+Buffer starts again
 ```
 
-### Why we used it
+The buffer is divided into two halves:
 
-A circular buffer allows continuous sampling without creating a new buffer every time.
+* Samples 0–3 → First half
+* Samples 4–7 → Second half
 
-The same memory is reused again and again.
+The processed ADC values are printed through UART.
 
-### Output
+## Task 2: UART RX Using ISR
 
-```text
-FIRST HALF
-ADC = 683
-ADC = 682
-ADC = 682
-ADC = 683
+UART receive is handled using the **USART RX interrupt**.
 
-SECOND HALF
-ADC = 682
-ADC = 683
-ADC = 682
-ADC = 683
-
-FIRST HALF
-ADC = 682
-ADC = 683
-...
-```
-
-The ADC values change when the potentiometer position changes.
-
-**Note:** ATmega328P does not have hardware DMA. Therefore, this module demonstrates the **DMA circular-buffer concept using software**.
-
----
-
-## Task 2 — UART RX Using ISR and Safe Circular Buffer
-
-### What we did
-
-We receive characters from the PC using the **UART receive interrupt (ISR)**.
-
-Every received character is placed into a **64-byte circular buffer**.
-
-The main loop removes the data from the buffer and forms the complete message.
-
-### Working
+Each received byte is stored in a **64-byte circular buffer**.
 
 ```text
-PC
- ↓
 UART RX
- ↓
+   ↓
 RX Interrupt
- ↓
-64-byte circular buffer
- ↓
-Main loop
- ↓
-Complete message
- ↓
-TX / RX / MISMATCH / DATA LOSS
+   ↓
+Circular Buffer
+   ↓
+Main Loop
+   ↓
+Process Received Data
 ```
 
-### Why we used it
+The ISR only stores the received byte quickly. The main loop processes the buffered data.
 
-The ISR receives data quickly and stores it safely while the main program continues running.
+If the circular buffer becomes full, the received byte cannot be stored and `uartOverflow` is increased.
 
-The circular buffer prevents the main program from needing to process every character immediately.
+This allows overflow/data loss to be detected during a stress test.
 
-Overflow is counted if the buffer becomes full.
+## Stress Test
 
-### UART Configuration
+Send continuous or repeated UART data from the PC.
 
-```text
-Baud Rate : 9600
-Data      : 8 bits
-Parity    : None
-Stop      : 1
-```
-
-### Test
-
-Send:
+Example:
 
 ```text
 HELLO
+HELLO
+HELLO
+HELLO
+HELLO
 ```
 
-and press Enter.
+The Serial Monitor displays the received message and the overflow count.
 
-### Output
+Expected result when the buffer does not overflow:
 
 ```text
-TX: HELLO
 RX: HELLO
-MISMATCH: 0
-DATA LOSS: 0
 UART OVERFLOWS: 0
 ```
 
-This shows that the message was received correctly and no UART buffer overflow occurred during the test.
+`UART OVERFLOWS: 0` means no circular-buffer overflow occurred during that test.
 
-## Main Concepts Learned
+## UART Settings
 
-* ADC sampling
-* Circular buffers
-* Half-buffer processing
-* Continuous buffer reuse
-* UART receive interrupt
-* Safe ISR buffering
-* Overflow detection
-* Non-blocking timing using `millis()`
-* No `delay()`
-* No dynamic memory
-
-## Limitations
-
-The Arduino Uno ATmega328P has no hardware DMA controller, so Task 1 is a **software implementation of the DMA circular-buffer concept**.
-
-Task 2 uses the UART RX interrupt directly instead of Arduino `Serial`, avoiding conflicts with the Arduino HardwareSerial RX interrupt.
-
+```text
+Baud Rate: 9600
+Data Bits: 8
+Parity: None
+Stop Bits: 1
 ```
+
+## Example Output
+
+```text
+MODULE 6 FIRMWARE
+------------------
+TASK 1: ADC CIRCULAR BUFFER
+TASK 2: UART RX ISR BUFFER
+ADC PIN: A1
+UART: 9600 8N1
+READY
+
+FIRST HALF
+ADC = 450
+ADC = 472
+ADC = 510
+ADC = 530
+
+SECOND HALF
+ADC = 550
+ADC = 570
+ADC = 600
+ADC = 620
+
+RX: HELLO
+UART OVERFLOWS: 0
 ```
+
+The ADC values will change when the potentiometer is rotated.
+
+## Key Points
+
+* No `delay()` is used.
+* No dynamic memory is used.
+* UART reception uses an interrupt.
+* UART data is stored safely in a circular buffer.
+* Buffer overflow is detected.
+* ADC data is collected in an 8-sample circular buffer.
+* First and second ADC halves are processed separately.
