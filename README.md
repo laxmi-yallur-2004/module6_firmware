@@ -132,11 +132,5 @@ UART OVERFLOWS: 0
 The ADC values will change when the potentiometer is rotated.
 
 ## Key Points
-
-* No `delay()` is used.
-* No dynamic memory is used.
-* UART reception uses an interrupt.
-* UART data is stored safely in a circular buffer.
-* Buffer overflow is detected.
 * ADC data is collected in an 8-sample circular buffer.
 * First and second ADC halves are processed separately.
