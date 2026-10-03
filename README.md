@@ -12,23 +12,11 @@
 
 ### Task 1: ADC Interrupt Circular Buffer
 
-* ADC input: A1
-* ADC conversion is handled using `ADC_vect` interrupt.
-* 8 ADC samples are stored in a circular/reused buffer.
-* Samples are processed as two halves:
-
-  * First half: 4 samples
-  * Second half: 4 samples
-* Average ADC value is calculated for each half.
-* No ADC polling is used.
+ADC reads **A1 using an interrupt** and stores **8 samples in a circular buffer**, then calculates the average of two 4-sample halves.
 
 ### Task 2: UART RX ISR Buffer
 
-* UART reception uses `USART_RX_vect` interrupt.
-* 64-byte circular buffer is used for received data.
-* Received messages are processed in the main loop.
-* UART buffer overflow is counted.
-* Test verifies received data and overflow status.
+UART receives data using an **RX interrupt and circular buffer**; extra data is detected and counted using the **overflow counter**.
 
 ## Connections
 
@@ -43,8 +31,6 @@
 ### UART
 
 Connect Arduino Uno to the PC using the USB cable.
-
-Serial Monitor:
 
 ```text
 Baud Rate: 9600
@@ -78,16 +64,22 @@ ADC = 516
 ADC = 516
 AVERAGE ADC = 515
 
-
 RX: laxmi
 UART OVERFLOWS: 0
 ```
 
+## Overflow Test
+
+```text
+RX: ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789A
+UART OVERFLOWS: 2
+```
+
+A non-zero value confirms that extra data was detected.
+
 ## DMA Limitation
 
-The ATmega328P does not have a hardware DMA controller.
-
-Therefore, Task 1 uses **ADC interrupt-driven circular buffering** instead of true DMA.
+The ATmega328P has **no hardware DMA controller**, so ADC sampling uses an **ADC interrupt and circular buffer** instead.
 
 ## Result
 
@@ -96,4 +88,3 @@ Therefore, Task 1 uses **ADC interrupt-driven circular buffering** instead of tr
 * UART RX ISR: PASS
 * UART circular buffer: PASS
 * Overflow detection: PASS
-
