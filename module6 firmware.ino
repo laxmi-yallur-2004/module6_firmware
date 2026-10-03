@@ -104,9 +104,13 @@ void processUART()
             }
         }
         else if (messageLength < MESSAGE_SIZE - 1)
-        {
-            message[messageLength++] = data;
-        }
+{
+    message[messageLength++] = data;
+}
+else
+{
+    uartOverflow++;
+}
     }
 }
 
