@@ -1,136 +1,98 @@
 # Module 6 Firmware
 
-## Hardware
+## Platform
 
-* Arduino Uno / ATmega328P
-* Potentiometer
-* USB cable
+* Arduino Uno
+* ATmega328P
+* CPU: 16 MHz
+* ADC: 10-bit
+* UART: 9600 8N1
+
+## Tasks
+
+### Task 1: ADC Interrupt Circular Buffer
+
+* ADC input: A1
+* ADC conversion is handled using `ADC_vect` interrupt.
+* 8 ADC samples are stored in a circular/reused buffer.
+* Samples are processed as two halves:
+
+  * First half: 4 samples
+  * Second half: 4 samples
+* Average ADC value is calculated for each half.
+* No ADC polling is used.
+
+### Task 2: UART RX ISR Buffer
+
+* UART reception uses `USART_RX_vect` interrupt.
+* 64-byte circular buffer is used for received data.
+* Received messages are processed in the main loop.
+* UART buffer overflow is counted.
+* Test verifies received data and overflow status.
 
 ## Connections
 
-| Connection          | Arduino |
-| ------------------- | ------- |
-| Potentiometer VCC   | 5V      |
-| Potentiometer Wiper | A1      |
-| Potentiometer GND   | GND     |
+### Potentiometer
 
-UART is through the Arduino USB connection.
+| Potentiometer   | Arduino Uno |
+| --------------- | ----------- |
+| Outer pin       | 5V          |
+| Other outer pin | GND         |
+| Middle/wiper    | A1          |
 
-## Task 1: ADC Circular Buffer
+### UART
 
-The Arduino reads the analog voltage from **A1** every 100 ms.
+Connect Arduino Uno to the PC using the USB cable.
 
-The ADC values are stored in an **8-sample circular buffer**.
-
-```text
-Potentiometer
-      ↓
-     A1
-      ↓
-   ADC Read
-      ↓
-8-sample buffer
-      ↓
-First 4 samples → Process
-Last 4 samples  → Process
-      ↓
-Buffer starts again
-```
-
-The buffer is divided into two halves:
-
-* Samples 0–3 → First half
-* Samples 4–7 → Second half
-
-The processed ADC values are printed through UART.
-
-## Task 2: UART RX Using ISR
-
-UART receive is handled using the **USART RX interrupt**.
-
-Each received byte is stored in a **64-byte circular buffer**.
-
-```text
-UART RX
-   ↓
-RX Interrupt
-   ↓
-Circular Buffer
-   ↓
-Main Loop
-   ↓
-Process Received Data
-```
-
-The ISR only stores the received byte quickly. The main loop processes the buffered data.
-
-If the circular buffer becomes full, the received byte cannot be stored and `uartOverflow` is increased.
-
-This allows overflow/data loss to be detected during a stress test.
-
-## Stress Test
-
-Send continuous or repeated UART data from the PC.
-
-Example:
-
-```text
-HELLO
-HELLO
-HELLO
-HELLO
-HELLO
-```
-
-The Serial Monitor displays the received message and the overflow count.
-
-Expected result when the buffer does not overflow:
-
-```text
-RX: HELLO
-UART OVERFLOWS: 0
-```
-
-`UART OVERFLOWS: 0` means no circular-buffer overflow occurred during that test.
-
-## UART Settings
+Serial Monitor:
 
 ```text
 Baud Rate: 9600
-Data Bits: 8
+Data: 8 bits
 Parity: None
-Stop Bits: 1
+Stop bits: 1
 ```
 
-## Example Output
+## Expected Output
 
 ```text
 MODULE 6 FIRMWARE
 ------------------
-TASK 1: ADC CIRCULAR BUFFER
+TASK 1: ADC INTERRUPT CIRCULAR BUFFER
 TASK 2: UART RX ISR BUFFER
 ADC PIN: A1
 UART: 9600 8N1
 READY
 
 FIRST HALF
-ADC = 450
-ADC = 472
-ADC = 510
-ADC = 530
+ADC = 512
+ADC = 512
+ADC = 512
+ADC = 512
+AVERAGE ADC = 512
 
 SECOND HALF
-ADC = 550
-ADC = 570
-ADC = 600
-ADC = 620
+ADC = 512
+ADC = 512
+ADC = 512
+ADC = 512
+AVERAGE ADC = 512
 
-RX: HELLO
+RX: laxmi
 UART OVERFLOWS: 0
 ```
 
-The ADC values will change when the potentiometer is rotated.
+## DMA Limitation
 
-## Key Points
-* ADC data is collected in an 8-sample circular buffer.
-* First and second ADC halves are processed separately.
+The ATmega328P does not have a hardware DMA controller.
+
+Therefore, Task 1 uses **ADC interrupt-driven circular buffering** instead of true DMA.
+
+## Result
+
+* ADC interrupt sampling: PASS
+* ADC circular buffer: PASS
+* UART RX ISR: PASS
+* UART circular buffer: PASS
+* Overflow detection: PASS
+
