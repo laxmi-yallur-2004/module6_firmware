@@ -14,7 +14,6 @@ DMA_HandleTypeDef hdma_adc;
 UART_HandleTypeDef huart1;
 DMA_HandleTypeDef hdma_uart;
 
-/* ---------- Task 1: ADC + DMA ---------- */
 volatile uint16_t adcBuffer[ADC_SAMPLES];
 
 struct AdcBlock
@@ -24,16 +23,10 @@ struct AdcBlock
   volatile bool ready;
 };
 
-/* Policy: the ADC runs continuously but one block is printed every 500 ms.
-   A block stays ready until it is printed. A newer block of the same half
-   overwrites it (latest wins) and adcDropped is incremented. */
-AdcBlock blocks[2];                 /* 0 = first half, 1 = second half */
+AdcBlock blocks[2];                 
 volatile uint32_t adcDropped = 0;
 volatile uint32_t adcErrors = 0;
 
-/* ---------- Task 2: UART RX + DMA ---------- */
-uint8_t uartDmaBuffer[UART_DMA_SIZE];
-uint8_t uartRing[UART_RING_SIZE];   /* 255 usable slots */
 
 volatile uint16_t dmaPos = 0;
 volatile uint32_t dmaCycles = 0;    /* completed DMA cycles counted by the IRQ */
@@ -69,8 +62,6 @@ bool uartPrintf(const char *fmt, ...)
   return true;
 }
 
-
-/* ---------- UART RX: DMA buffer -> ring buffer ---------- */
 static void drainUart()
 {
   uint16_t cur = (UART_DMA_SIZE - __HAL_DMA_GET_COUNTER(&hdma_uart)) % UART_DMA_SIZE;
@@ -148,8 +139,6 @@ static bool startUartRx()
   return true;
 }
 
-
-/* ---------- ADC callbacks ---------- */
 static void captureBlock(int slot, int offset)
 {
   if (blocks[slot].ready) adcDropped++;
@@ -176,8 +165,6 @@ extern "C" void HAL_ADC_ErrorCallback(ADC_HandleTypeDef *hadc)
   if (hadc->Instance == ADC1) adcErrors++;
 }
 
-
-/* ---------- Interrupt handlers ---------- */
 extern "C" void DMA2_Stream0_IRQHandler(void)
 {
   HAL_DMA_IRQHandler(&hdma_adc);
@@ -196,8 +183,6 @@ extern "C" void ADC_IRQHandler(void)
   HAL_ADC_IRQHandler(&hadc1);
 }
 
-
-/* ---------- Init ---------- */
 bool UART_Init()
 {
   __HAL_RCC_GPIOA_CLK_ENABLE();
@@ -294,8 +279,6 @@ bool ADC_Init()
   return HAL_ADC_Start_DMA(&hadc1, (uint32_t *)adcBuffer, ADC_SAMPLES) == HAL_OK;
 }
 
-
-/* ---------- Task 1: stable processing ---------- */
 bool processBlock(int slot)
 {
   uint16_t s[ADC_HALF];
@@ -349,8 +332,6 @@ void reportFaults()
              (unsigned long)txErrors);
 }
 
-
-/* ---------- Task 2: UART echo from ring buffer ---------- */
 void processUART()
 {
   static bool lastLineErr = false;
@@ -390,7 +371,6 @@ void processUART()
       txErrors++;
   }
 }
-
 
 void setup()
 {
