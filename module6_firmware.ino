@@ -7,7 +7,7 @@
 #define ADC_SAMPLES     8
 #define ADC_HALF        4
 #define UART_DMA_SIZE   256
-#define UART_RING_SIZE  256
+#define UART_RING_SIZE  1024
 
 ADC_HandleTypeDef hadc1;
 DMA_HandleTypeDef hdma_adc;
@@ -23,10 +23,12 @@ struct AdcBlock
   volatile bool ready;
 };
 
-AdcBlock blocks[2];                 
+AdcBlock blocks[2];
 volatile uint32_t adcDropped = 0;
 volatile uint32_t adcErrors = 0;
 
+uint8_t uartDmaBuffer[UART_DMA_SIZE];
+uint8_t uartRing[UART_RING_SIZE];
 
 volatile uint16_t dmaPos = 0;
 volatile uint32_t dmaCycles = 0;    /* completed DMA cycles counted by the IRQ */
@@ -347,8 +349,8 @@ void processUART()
   if (uartRestart)
   {
     uartRestart = false;
-    HAL_UART_DMAStop(&huart1);
-    if (!startUartRx())
+
+    if (HAL_UART_DMAStop(&huart1) != HAL_OK || !startUartRx())
     {
       uartPrintf("ERROR: UART RX RESTART FAILED\r\n");
       fatalError();
