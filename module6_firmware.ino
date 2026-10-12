@@ -9,10 +9,12 @@
 #define UART_DMA_SIZE   256
 #define UART_RING_SIZE  1024
 
+#define STUCK_TEST      0  
 ADC_HandleTypeDef hadc1;
 DMA_HandleTypeDef hdma_adc;
 UART_HandleTypeDef huart1;
 DMA_HandleTypeDef hdma_uart;
+
 
 volatile uint16_t adcBuffer[ADC_SAMPLES];
 
@@ -23,23 +25,24 @@ struct AdcBlock
   volatile bool ready;
 };
 
-AdcBlock blocks[2];
+
+AdcBlock blocks[2];               
 volatile uint32_t adcDropped = 0;
 volatile uint32_t adcErrors = 0;
 
-uint8_t uartDmaBuffer[UART_DMA_SIZE];
-uint8_t uartRing[UART_RING_SIZE];
+
 
 volatile uint16_t dmaPos = 0;
-volatile uint32_t dmaCycles = 0;    /* completed DMA cycles counted by the IRQ */
+volatile uint32_t dmaCycles = 0;   
 uint32_t cyclesUsed = 0;
 volatile uint16_t ringHead = 0;
 volatile uint16_t ringTail = 0;
 volatile uint16_t dmaHighWater = 0;
-volatile uint32_t dmaLost = 0;      /* bytes overwritten by DMA before being read */
+volatile uint32_t dmaLost = 0;      
 volatile uint32_t ringOverflow = 0;
 volatile uint32_t uartErrors = 0;
 volatile bool uartRestart = false;
+uint32_t dmaRestarts = 0;          
 uint32_t txErrors = 0;
 
 
@@ -50,7 +53,7 @@ static void fatalError()
 
 bool uartPrintf(const char *fmt, ...)
 {
-  char buf[160];
+  char buf[200];
   va_list args;
   va_start(args, fmt);
   vsnprintf(buf, sizeof(buf), fmt, args);
@@ -141,6 +144,22 @@ static bool startUartRx()
   return true;
 }
 
+/* The circular UART DMA must always be running. If its stream or its UART
+   request is switched off, reception is stuck. */
+static bool uartRxStopped()
+{
+  return (hdma_uart.Instance->CR & DMA_SxCR_EN) == 0 ||
+         (huart1.Instance->CR3 & USART_CR3_DMAR) == 0;
+}
+
+static bool restartUartRx()
+{
+  HAL_UART_DMAStop(&huart1);
+  HAL_DMA_Abort(&hdma_uart);
+  huart1.RxState = HAL_UART_STATE_READY;
+  return startUartRx();
+}
+
 static void captureBlock(int slot, int offset)
 {
   if (blocks[slot].ready) adcDropped++;
@@ -167,6 +186,8 @@ extern "C" void HAL_ADC_ErrorCallback(ADC_HandleTypeDef *hadc)
   if (hadc->Instance == ADC1) adcErrors++;
 }
 
+
+/* ---------- Interrupt handlers ---------- */
 extern "C" void DMA2_Stream0_IRQHandler(void)
 {
   HAL_DMA_IRQHandler(&hdma_adc);
@@ -281,6 +302,31 @@ bool ADC_Init()
   return HAL_ADC_Start_DMA(&hadc1, (uint32_t *)adcBuffer, ADC_SAMPLES) == HAL_OK;
 }
 
+static bool restartAdc()
+{
+  if (HAL_ADC_Stop_DMA(&hadc1) != HAL_OK) return false;
+  return HAL_ADC_Start_DMA(&hadc1, (uint32_t *)adcBuffer, ADC_SAMPLES) == HAL_OK;
+}
+void checkAdcAlive()
+{
+  static bool primed = false;
+  static uint32_t lastSeq = 0;
+  uint32_t nowSeq = blocks[0].seq + blocks[1].seq;
+
+  if (primed && nowSeq == lastSeq)
+  {
+    dmaRestarts++;
+
+    if (!restartAdc())
+    {
+      uartPrintf("ERROR: ADC DMA RESTART FAILED\r\n");
+      fatalError();
+    }
+  }
+
+  lastSeq = nowSeq;
+  primed = true;
+}
 bool processBlock(int slot)
 {
   uint16_t s[ADC_HALF];
@@ -323,17 +369,16 @@ bool processBlock(int slot)
 void reportFaults()
 {
   static uint32_t last = 0;
-  uint32_t total = ringOverflow + dmaLost + uartErrors + adcErrors + txErrors;
+  uint32_t total = ringOverflow + dmaLost + uartErrors + adcErrors + txErrors + dmaRestarts;
 
   if (total == last) return;
   last = total;
 
-  uartPrintf("\r\n[FAULTS] ring overflow: %lu | dma lost: %lu | uart err: %lu | adc err: %lu | tx err: %lu\r\n",
+  uartPrintf("\r\n[FAULTS] ring overflow: %lu | dma lost: %lu | uart err: %lu | adc err: %lu | tx err: %lu | dma restarts: %lu\r\n",
              (unsigned long)ringOverflow, (unsigned long)dmaLost,
              (unsigned long)uartErrors, (unsigned long)adcErrors,
-             (unsigned long)txErrors);
+             (unsigned long)txErrors, (unsigned long)dmaRestarts);
 }
-
 void processUART()
 {
   static bool lastLineErr = false;
@@ -346,11 +391,12 @@ void processUART()
   drainUart();
   __enable_irq();
 
-  if (uartRestart)
+  if (uartRestart || uartRxStopped())
   {
     uartRestart = false;
+    dmaRestarts++;
 
-    if (HAL_UART_DMAStop(&huart1) != HAL_OK || !startUartRx())
+    if (!restartUartRx())
     {
       uartPrintf("ERROR: UART RX RESTART FAILED\r\n");
       fatalError();
@@ -373,6 +419,7 @@ void processUART()
       txErrors++;
   }
 }
+
 
 void setup()
 {
@@ -397,7 +444,12 @@ void loop()
 {
   static uint32_t lastPrint = 0;
   static int nextSlot = 0;
-
+  static bool stuckDone = false;
+  if (!stuckDone && millis() > 5000)
+  {
+    stuckDone = true;
+    hdma_uart.Instance->CR &= ~DMA_SxCR_EN;
+  }
   processUART();
 
   if (millis() - lastPrint >= 500)
@@ -407,6 +459,7 @@ void loop()
     if (processBlock(nextSlot))
       nextSlot ^= 1;
 
+    checkAdcAlive();
     reportFaults();
   }
 }
